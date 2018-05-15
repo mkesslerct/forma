@@ -1,1 +1,5 @@
-curl http://cloud.opencpu.org/ocpu/apps/mkesslerct/forma/R/preparar_json/json -d 'json_data="dd"'
+curl
+http://cloud.opencpu.org/ocpu/apps/mkesslerct/forma/R/preparar_json/json
+-d 'json_data="dd"'
+
+ curl  http://cloud.opencpu.org/ocpu/apps/mkesslerct/forma/R/preparar_json/json -d 'json_data="{\"a\":[3]}"'

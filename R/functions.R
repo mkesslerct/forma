@@ -20,5 +20,5 @@ genera_gauss <- function(n = 2){
 #' preparar_json({{"a":3,"nombre":"Mathieu"} })
 preparar_json <- function(json_data){
   tt <- jsonlite::fromJSON(json_data)
-  tt
+  dim(tt)
 }
