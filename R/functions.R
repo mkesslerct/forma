@@ -19,6 +19,6 @@ genera_gauss <- function(n = 2){
 #' @examples
 #' preparar_json({{"a":3,"nombre":"Mathieu"} })
 preparar_json <- function(json_data){
-  #tt <- jsonlite::fromJSON(json_data)
-  map_int(list(u = 1:3, v = list(a = 1, b = 2)), ~ length(.x))
+  tt <- jsonlite::fromJSON(json_data)
+  tt
 }
