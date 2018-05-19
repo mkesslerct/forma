@@ -10,7 +10,7 @@ preparar_json(json_data)
 \item{json_data}{A string}
 }
 \value{
-la longitud de la lista
+una lista con los objetos necesarios para el cuadro de mandos shiny
 }
 \description{
 Manipula json de eventos y estructura del curso

@@ -29,7 +29,7 @@ completar_objetivos <- function(objetivos.df, porcentajes){
         right = TRUE,
         labels = FALSE
     )
-    tibble(
+    tibble::tibble(
         porcentaje = porcentajes,
         cut_porcentaje = cut(
             porcentajes,
@@ -55,7 +55,7 @@ colores_q <- setNames(
 prepara_trozo <- function(df){
 ##    browser()
     list(
-        data = pmap(
+        data = purrr::pmap(
             list(df$valor, df$porcentaje, df$n_q, df$variable),
             function(a, b, c, d) list(
                                      x = a,
@@ -73,35 +73,31 @@ prepara_trozo <- function(df){
 
 repartir_duracion <- function(fecha, duracion){
     dias <- seq(
-        from = floor_date(fecha, unit = "day"),
-        to = floor_date(fecha + duracion, unit = "day"),
+        from = lubridate::floor_date(fecha, unit = "day"),
+        to = lubridate::floor_date(fecha + duracion, unit = "day"),
         by = "day"
     )
     fechas_auxiliares <- c(
         fecha,
         seq(
-            from = ceiling_date(fecha, unit = "day"),
+            from = lubridate::ceiling_date(fecha, unit = "day"),
             by = "day",
             length.out = (length(dias) - 1)
         ),
         fecha + duracion
     )
-    tibble(dia = dias, duracion = diff(fechas_auxiliares))
+    tibble::tibble(dia = dias, duracion = diff(fechas_auxiliares))
 }
 ##
 
 ## prepara json_data
 #' Manipula json de eventos y estructura del curso
 #'
-#'@import purrr
-#'@import tidyr
-#'@import lubridate
-#'@import tibble
 #'@import dplyr
 #'
 #' @param json_data A string
 #'
-#' @return la longitud de la lista
+#' @return una lista con los objetos necesarios para el cuadro de mandos shiny
 #' @export
 #'
 #' @examples
@@ -109,7 +105,7 @@ repartir_duracion <- function(fecha, duracion){
 preparar_json <- function(json_data){
 json_objetos <- jsonlite::fromJSON(json_data)
 tipos <- unique(json_objetos$tipo)
-tipos_ordenados <- tibble(
+tipos_ordenados <- tibble::tibble(
     tipo = c(
         "LoggedIn",
         tipos[tipos != "LoggedIn"]
@@ -154,7 +150,7 @@ usuarios <- json_data %>%
 ## al inicio de una sesión. Asignamos a la sesión todo lo que hay
 ## hasta el siguiente LoggedIn
 eventos <- json_data %>%
-    mutate(fecha = mdy_hms(fecha)) %>%
+    mutate(fecha = lubridate::mdy_hms(fecha)) %>%
     arrange(fecha, tipo_id) %>%
     group_by(url) %>%
     group_by(usuario) %>%
@@ -238,7 +234,7 @@ tiempos_usuarios <- tiempo_usuario %>%
         visitadas = sum(tiempo_unidad),
         superadas = sum(tiempo_unidad[maxporcentaje >= 100])
     ) %>%
-    gather(
+    tidyr::gather(
         key = "tipo",
         value = "tiempo",
         visitadas, superadas
@@ -249,7 +245,7 @@ unidades_usuarios <- tiempo_usuario %>%
         visitadas = n_distinct(url),
         superadas = sum(maxporcentaje >= 100)
     ) %>%
-    gather(
+    tidyr::gather(
         key = "tipo",
         value = "unidades",
         visitadas, superadas
@@ -299,17 +295,17 @@ porcentajes_unidad <- objetivos %>%
 objetivos_completados <- objetivos %>%
     group_by(usuario,  url) %>%
     select(tiempo = tiempo_empleado, porcentaje) %>%
-    nest() %>%
+    tidyr::nest() %>%
     left_join(porcentajes_unidad) %>%
     mutate(
-        porcentajes_completados = map2(
+        porcentajes_completados = purrr::map2(
             data,
             porcentajes,
             ~ completar_objetivos(objetivos.df = .x, porcentajes = .y)
         )
     ) %>%
     select(- data, - porcentajes) %>%
-    unnest()
+    tidyr::unnest()
 
 alcance_cuartiles <-  objetivos_completados %>%
     mutate(tiempo = pasar_minutos(tiempo)) %>%
@@ -322,7 +318,7 @@ alcance_cuartiles <-  objetivos_completados %>%
     )
 
 alcance_cuartiles.long <- alcance_cuartiles %>%
-        gather(key = "variable", value = "valor", Q1:Q3 ) %>%
+        tidyr::gather(key = "variable", value = "valor", Q1:Q3 ) %>%
         group_by(url, variable) %>%
         mutate(
             trozo = c(TRUE, diff(valor) < 0),
@@ -338,9 +334,9 @@ alcance_cuartiles.long <- alcance_cuartiles %>%
 alcance_cuartiles_df <- alcance_cuartiles.long %>%
     mutate(variable2 = variable) %>%
     group_by(url, trozo, variable2) %>%
-    nest()
+    tidyr::nest()
 
-trozos <- map(alcance_cuartiles_df$data, ~ prepara_trozo(.x))
+trozos <- purrr::map(alcance_cuartiles_df$data, ~ prepara_trozo(.x))
 lista_trozos <- list(trozos = trozos, url = alcance_cuartiles_df$url)
 
 
@@ -359,10 +355,10 @@ logins <- eventos %>%
 ## repartir tiempo
 logins <- logins %>%
     mutate(
-        necesita_reparto = floor_date(fecha, unit = "day") !=
-            floor_date(fecha + duracion_sesion, unit = "day")
+        necesita_reparto = lubridate::floor_date(fecha, unit = "day") !=
+            lubridate::floor_date(fecha + duracion_sesion, unit = "day")
     )
-dedicacion_diaria_vacio <- tibble(
+dedicacion_diaria_vacio <- tibble::tibble(
     usuario = character(),
     fecha = as.Date(character()),
     sesion = integer(),
@@ -381,7 +377,7 @@ if (sum(!logins$necesita_reparto) > 0){
             duracion_sesion
         ) %>%
         mutate(
-            dia = floor_date(fecha, unit = "day"),
+            dia = lubridate::floor_date(fecha, unit = "day"),
             duracion = as.difftime(duracion_sesion, units = "secs")
         )
 } else {
@@ -392,7 +388,7 @@ if(sum(logins$necesita_reparto) > 0){
     logins_con_reparto <- logins %>%
         filter(necesita_reparto) %>%
         mutate(
-            df_duracion = map2(
+            df_duracion = purrr::map2(
                 fecha,
                 duracion_sesion,
                 ~ repartir_duracion(.x, .y)
@@ -409,7 +405,7 @@ if(sum(logins$necesita_reparto) > 0){
             duracion_sesion,
             df_duracion
         ) %>%
-        unnest()
+        tidyr::unnest()
     ## nos aseguramos que estamos trabajando en segundos
     units(dedicacion_diaria_con_reparto$duracion) <- "secs"
 } else {

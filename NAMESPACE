@@ -2,7 +2,3 @@
 
 export(preparar_json)
 import(dplyr)
-import(lubridate)
-import(purrr)
-import(tibble)
-import(tidyr)
