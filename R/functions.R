@@ -445,3 +445,226 @@ datos <- list(
 )
 datos
 }
+
+## ------------------------------------------------------------------------------------------
+##
+##  La función de preparación de los datos para el cuadro de mando alumnos
+##
+## ------------------------------------------------------------------------------------------
+
+
+## prepara json_data_alumno
+#' Manipula json de eventos para un alumno
+#'
+#'@import dplyr
+#'
+#' @param json_string A string
+#'
+#' @return una lista con los objetos necesarios para el cuadro de mandos shiny de alumno
+#' @export
+#'
+#' @examples
+#' preparar_json_alumno({{"a":3,"nombre":"Mathieu"} })
+preparar_json_alumno<- function(json_string){
+    json_data <- jsonlite::fromJSON(json_string)
+    tipos <- unique(json_data$tipo)
+    tipos_ordenados <- tibble(
+        tipo = c(
+            "LoggedIn",
+            tipos[tipos != "LoggedIn"]
+        ),
+        tipo_id = 1:length(tipos)
+    )
+    json_data <- json_data %>%
+        mutate(
+            porcentaje = as.numeric(porcentaje),
+            unidad = formatC(
+                as.integer(unidad),
+                width = ceiling(log(max(as.integer(unidad)), 10)),
+                format = "d",
+                flag = "0"
+            )
+        ) %>%
+        left_join(tipos_ordenados)
+
+    ## ---------------------------------------------------------------------
+
+    ## Para definir la sesion, usamos que hay siempre un LoggedIn
+    ## al inicio de una sesión. Asignamos a la sesión todo lo que hay
+    ## hasta el siguiente LoggedIn
+    eventos <- json_data %>%
+        mutate(fecha = lubridate::mdy_hms(fecha)) %>%
+        arrange(fecha, tipo_id) %>%
+        group_by(unidad, url) %>%
+        mutate(titulo_actual = tail(titulo, 1L)) %>%
+        group_by(correo) %>%
+        mutate(sesion = cumsum(tipo == "LoggedIn")) %>%
+        ungroup()
+    eventos <- eventos %>%
+        filter(perfil == "alumno")
+    ## obtenemos para cada evento en sesion, unidad y url, la duración hasta el evento,
+    ## es decir, el tiempo transcurrido desde el inicio de la sesión hasta este
+    ## evento y la duración acumulada previa el tiempo dedicado a la unidad, url
+    ## antes de esta sesión para este usuario.
+    eventos <- eventos  %>%
+        group_by(correo, sesion, unidad, url) %>%
+        mutate(
+            duracion_hasta_evento = as.numeric(fecha) - as.numeric(fecha[1L])
+        )
+    duracion_sesiones <- eventos  %>%
+        group_by(correo, sesion, unidad, url) %>%
+        summarise(
+            duracion_sesion = diff(as.numeric(range(fecha)))
+        ) %>%
+        ungroup() %>%
+        group_by(correo, unidad, url) %>%
+        mutate(
+            duracion_acumulada_previa = cumsum(
+                c(0, duracion_sesion)[1:length(duracion_sesion)]
+            )
+        )
+    ## añadimos a eventos, la duración_acumulada previa (tiempo dedicada
+    ## a la unidad en sesiones anteriores
+    eventos <- eventos %>%
+        left_join(duracion_sesiones)
+    ## para cada evento, calculamos el tiempo empleado en la unidad para llegar
+    ## hasta allí.
+    eventos <- eventos %>%
+        mutate(tiempo_empleado = duracion_hasta_evento +
+                   duracion_acumulada_previa)
+
+    ## -------------------------------------------------
+    ## tiempo medio dedicado a cada unidad, url: calculamos por cada usuario
+    ## el máximo del tiempo_empleado,
+    tiempo_usuario <- eventos %>%
+        group_by(correo, nombre, apellidos, unidad, url, titulo_actual) %>%
+        summarise(
+            maxporcentaje = max(porcentaje),
+            tiempo_unidad = max(tiempo_empleado)
+        ) %>%
+        ungroup()
+
+
+    ##
+    ## --------------------------------------------------------------------------
+    numero_unidades_visitadas <-  nrow(
+        eventos %>%
+        ungroup() %>%
+        select(url, unidad) %>%
+        distinct(.)
+    )
+
+    numero_unidades_superadas <- nrow(
+        tiempo_usuario %>%
+        ungroup() %>%
+        filter(maxporcentaje >= 100) %>%
+        select(unidad, url) %>%
+        distinct(.)
+    )
+
+    tiempo_dedicado <- formatear_tiempo(sum(tiempo_usuario$tiempo_unidad))
+    ## ------------------------------------------------------------------------------------------
+    ##
+    ##  Para dedicación diaria
+    ##
+    ## ------------------------------------------------------------------------------------------
+
+
+    logins <- eventos %>%
+        filter(tipo == "LoggedIn")
+    ##Cogemos el Loggin de cada sesión, le calculamos su duración y se la asignamos a ese día
+    ## tenemos que repartir la duración sobre días y una sesion empieza un día
+    ## acaba en otro.
+    ## empezamos por no hacer nada en los logins donde no hay necesidad de
+    ## repartir tiempo
+    logins <- logins %>%
+        mutate(
+            necesita_reparto = lubridate::floor_date(fecha, unit = "day") !=
+                lubridate::floor_date(fecha + duracion_sesion, unit = "day")
+        )
+    dedicacion_diaria_vacio <- tibble(
+        usuario = character(),
+        correo = character(),
+        nombre = character(),
+        apellidos = character(),
+        fecha = as.Date(character()),
+        sesion = integer(),
+        duracion_sesion = numeric(),
+        dia = as.Date(character()),
+        duracion = as.difftime(numeric(), units = "secs")
+    )
+    if (sum(!logins$necesita_reparto) > 0){
+        dedicacion_diaria_sin_reparto <- logins %>%
+            filter(!necesita_reparto) %>%
+            ungroup() %>%
+            select(
+                usuario,
+                correo,
+                nombre,
+                apellidos,
+                fecha,
+                sesion,
+                duracion_sesion
+            ) %>%
+            mutate(
+                dia =  lubridate::floor_date(fecha, unit = "day"),
+                duracion = as.difftime(duracion_sesion, units = "secs")
+            )
+    } else {
+        dedicacion_diaria_sin_reparto <- dedicacion_diaria_vacio
+    }
+
+    if(sum(logins$necesita_reparto) > 0){
+        logins_con_reparto <- logins %>%
+            filter(necesita_reparto) %>%
+            mutate(
+                df_duracion = purrr::map2(
+                                         fecha,
+                                         duracion_sesion,
+                                         ~ repartir_duracion(.x, .y)
+                                     )
+            )
+                                        #Cogemos el Loggin de cada sesión, le calculamos su duración y se la
+        ## asignamos a ese día
+        dedicacion_diaria_con_reparto <- logins_con_reparto %>%
+            ungroup() %>%
+            select(
+                usuario,
+                correo,
+                nombre,
+                apellidos,
+                fecha,
+                sesion,
+                duracion_sesion,
+                df_duracion
+            ) %>%
+            tidyr::unnest()
+        ## nos aseguramos que estamos trabajando en segundos
+        units(dedicacion_diaria_con_reparto$duracion) <- "secs"
+    } else {
+        dedicacion_diaria_con_reparto <- dedicacion_diaria_vacio
+    }
+    dedicacion_diaria <- rbind(
+        dedicacion_diaria_sin_reparto,
+        dedicacion_diaria_con_reparto
+    ) %>%
+        group_by(correo, nombre, apellidos, dia) %>%
+        summarise(
+            tiempo_dedicado = as.numeric(sum(duracion))
+        )
+
+    ## ------------------------------------------------------------------------------------------
+    ##
+    ##  Lo recogemos todo en una lista para pasarlo en json
+    ##
+    ## ------------------------------------------------------------------------------------------
+
+    list(
+        numero_unidades_visitadas = numero_unidades_visitadas,
+        numero_unidades_superadas = numero_unidades_superadas,
+        tiempo_dedicado = tiempo_dedicado,
+        dedicacion_diaria = dedicacion_diaria,
+        tiempo_usuario = tiempo_usuario
+    )
+
+}
