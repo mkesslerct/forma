@@ -4,10 +4,10 @@
 \alias{preparar_json_alumno}
 \title{Manipula json de eventos para un alumno}
 \usage{
-preparar_json_alumno(json_string)
+preparar_json_alumno(json_data)
 }
 \arguments{
-\item{json_string}{A string}
+\item{json_data}{A string}
 }
 \value{
 una lista con los objetos necesarios para el cuadro de mandos shiny de alumno
